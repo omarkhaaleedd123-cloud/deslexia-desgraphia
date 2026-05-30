@@ -79,5 +79,3 @@ export class Conversation extends Model<Conversation> {
   @HasOne(() => Message)
   lastMessage: Message;
 }
-
-
