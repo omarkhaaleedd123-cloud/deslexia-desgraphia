@@ -47,47 +47,4 @@ export class ChildrenService {
       message: 'Child deleted successfully',
     };
   }
-
-  async evaluateSpeech(audioPath: string, expectedText: string) {
-    return new Promise((resolve, reject) => {
-      const { spawn } = require('child_process');
-
-      // استخدمي المسار مباشرة بدون path.join لأنه مسار مطلق (Absolute)
-      const pythonScript = 'D:\\Nada\\ai\\STT-GradProj\\main.py';
-
-      const pythonProcess = spawn('python', [
-        pythonScript,
-        audioPath,
-        expectedText
-      ]);
-
-      let resultData = "";
-      let errorData = "";
-
-      pythonProcess.stdout.on('data', (data) => {
-        resultData += data.toString();
-      });
-
-      // مهم جداً عشان تشوفي لو البايثون طلع Error (زي مكتبة ناقصة)
-      pythonProcess.stderr.on('data', (data) => {
-        errorData += data.toString();
-      });
-
-      pythonProcess.on('close', (code) => {
-        if (code !== 0) {
-          console.error(`Python Process Error Code: ${code}`);
-          console.error(`Python Stderr: ${errorData}`);
-          return reject(new Error(`AI Script Failed: ${errorData}`));
-        }
-
-        try {
-          const finalJson = JSON.parse(resultData.trim());
-          resolve(finalJson);
-        } catch (e) {
-          console.error(`Failed to parse Python Output: ${resultData}`);
-          reject(new Error("AI Output was not valid JSON"));
-        }
-      });
-    });
-  }
 }
