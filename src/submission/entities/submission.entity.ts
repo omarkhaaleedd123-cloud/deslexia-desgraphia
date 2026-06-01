@@ -106,7 +106,9 @@ export class Submission extends Model<Submission> {
   @UpdatedAt
   updatedAt: Date;
 
-  // relation
-  @BelongsTo(() => Child)
+  @BelongsTo(() => Child, {
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+  })
   child: Child;
 }
