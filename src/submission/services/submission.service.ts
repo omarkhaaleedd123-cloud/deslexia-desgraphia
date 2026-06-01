@@ -89,7 +89,30 @@ export class SubmissionService {
       await this.submissionProvider.findByChildWithChild(childId);
 
     if (!submissions.length) {
-      return { message: 'No data yet' };
+      return {
+        hasData: false,
+        message: 'لم يقم الطفل بأي تمرين بعد',
+
+        stats: {
+          reading: {
+            percentage: 0,
+            status: 'لا توجد بيانات',
+          },
+          writing: {
+            percentage: 0,
+            status: 'لا توجد بيانات',
+          },
+          performance: {
+            percentage: 0,
+            status: 'لا توجد بيانات',
+          },
+        },
+
+        chartData: [],
+        lettersToPractice: [],
+        alerts: [],
+        activities: [],
+      };
     }
     const child = submissions[0].child;
     if (child.parentId !== parentId) {
@@ -102,7 +125,7 @@ export class SubmissionService {
         const bDate = new Date(child.birthDate);
 
         if (!isNaN(bDate.getTime()) && bDate.getFullYear() > 1900) {
-          age = 2026 - bDate.getFullYear();
+          age = new Date().getFullYear() - bDate.getFullYear();
           console.log(
             'TRACE: Method 1 (Date Object) worked. Year:',
             bDate.getFullYear(),
@@ -112,7 +135,7 @@ export class SubmissionService {
           const yearMatch = dateStr.match(/\d{4}/);
           if (yearMatch) {
             const year = parseInt(yearMatch[0], 10);
-            age = 2026 - year;
+            age = new Date().getFullYear() - year;
             console.log('TRACE: Method 2 (Regex) worked. Year:', year);
           }
         }
@@ -125,10 +148,15 @@ export class SubmissionService {
     const stats = {
       reading: this.calculateType(submissions, 'reading'),
       writing: this.calculateType(submissions, 'writing'),
-      listening: this.calculateType(submissions, 'listening'),
+      performance: this.calculateFocus(submissions),
     };
 
     // chart
+    submissions.sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+
     const lastSubmissions = submissions.slice(-3);
 
     const chartData = lastSubmissions.map((s, index) => {
@@ -143,7 +171,7 @@ export class SubmissionService {
 
         reading: s.exerciseType === 'reading' ? score : 0,
         writing: s.exerciseType === 'writing' ? score : 0,
-        focus: s.exerciseType === 'listening' ? score : 0,
+        performance: this.calculateSingleFocus(s),
       };
     });
 
@@ -211,11 +239,11 @@ export class SubmissionService {
     }
 
     // listening
-    if (stats.listening.percentage < 40) {
+    if (stats.performance.percentage < 40) {
       alerts.push({
         id: alertId++,
         type: 'warning',
-        text: 'مهارات الاستماع تحتاج إلى تطوير',
+        text: 'مستوى الأداء يحتاج إلى تطوير',
       });
     }
 
@@ -223,7 +251,7 @@ export class SubmissionService {
     if (
       stats.reading.percentage >= 70 &&
       stats.writing.percentage >= 70 &&
-      stats.listening.percentage >= 70
+      stats.performance.percentage >= 70
     ) {
       alerts.push({
         id: alertId++,
@@ -255,11 +283,12 @@ export class SubmissionService {
     }
 
     // listening general
-    if (stats.listening.percentage < 50) {
-      activities.push({
-        id: id++,
-        type: 'listening',
-        text: 'تمرين استماع وتمييز الأصوات المتشابهة',
+    // performance alert
+    if (stats.performance.percentage < 40) {
+      alerts.push({
+        id: alertId++,
+        type: 'warning',
+        text: 'مهارات التركيز والأداء تحتاج إلى تطوير',
       });
     }
 
@@ -302,6 +331,7 @@ export class SubmissionService {
     }
 
     return {
+      hasData: true,
       parentEmail: parent.email,
       childName: child.name,
       age: age,
@@ -314,6 +344,9 @@ export class SubmissionService {
       lettersToPractice,
       alerts,
       activities,
+      readingImprovement: this.calculateImprovement(submissions, 'reading'),
+
+      writingImprovement: this.calculateImprovement(submissions, 'writing'),
     };
   }
   private calculateType(submissions: any[], type: string) {
@@ -345,5 +378,98 @@ export class SubmissionService {
     else if (percentage >= 40) status = 'متوسط';
 
     return { percentage, status };
+  }
+  private calculateFocus(submissions: any[]) {
+    let totalFocus = 0;
+    let count = 0;
+
+    for (const s of submissions) {
+      const totalItems = s.totalItems || 0;
+      const mistakesCount = (s.mistakes || []).length;
+      const duration = s.duration || 0;
+      const attemptsCount = s.attemptsCount || 1;
+
+      if (totalItems <= 0) continue;
+
+      // الدقة
+      const accuracy = ((totalItems - mistakesCount) / totalItems) * 100;
+
+      // الوقت المتوقع
+      const expectedTime = totalItems * 10;
+
+      const timeFactor =
+        duration > 0 ? Math.min((expectedTime / duration) * 100, 100) : 100;
+
+      const attemptsFactor =
+        attemptsCount <= 1 ? 100 : Math.max(0, 100 - (attemptsCount - 1) * 20);
+
+      const focus = accuracy * 0.6 + timeFactor * 0.2 + attemptsFactor * 0.2;
+
+      totalFocus += focus;
+      count++;
+    }
+
+    const percentage = count > 0 ? Math.round(totalFocus / count) : 0;
+
+    let status = 'ضعيف';
+
+    if (percentage >= 70) status = 'جيد';
+    else if (percentage >= 40) status = 'متوسط';
+
+    return {
+      percentage,
+      status,
+    };
+  }
+  private calculateSingleFocus(s: any) {
+    const totalItems = s.totalItems || 0;
+    const mistakesCount = (s.mistakes || []).length;
+    const duration = s.duration || 0;
+    const attemptsCount = s.attemptsCount || 1;
+
+    if (totalItems <= 0) {
+      return 0;
+    }
+
+    const accuracy = ((totalItems - mistakesCount) / totalItems) * 100;
+
+    const expectedTime = totalItems * 10;
+
+    const timeFactor =
+      duration > 0 ? Math.min((expectedTime / duration) * 100, 100) : 100;
+
+    const attemptsFactor =
+      attemptsCount <= 1 ? 100 : Math.max(0, 100 - (attemptsCount - 1) * 20);
+
+    return Math.round(accuracy * 0.6 + timeFactor * 0.2 + attemptsFactor * 0.2);
+  }
+  private calculateImprovement(submissions: any[], type: string) {
+    const filtered = submissions.filter((s) => s.exerciseType === type);
+
+    if (filtered.length < 2) {
+      return {
+        difference: 0,
+        trend: 'stable',
+      };
+    }
+
+    const first = filtered[0];
+    const last = filtered[filtered.length - 1];
+
+    const firstScore =
+      ((first.totalItems - (first.mistakes?.length || 0)) / first.totalItems) *
+      100;
+
+    const lastScore =
+      ((last.totalItems - (last.mistakes?.length || 0)) / last.totalItems) *
+      100;
+
+    const difference = Math.round(lastScore - firstScore);
+
+    return {
+      difference,
+      trend:
+        difference > 0 ? 'improved' : difference < 0 ? 'declined' : 'stable',
+    };
   }
 }
