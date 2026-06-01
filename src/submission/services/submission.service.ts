@@ -94,18 +94,9 @@ export class SubmissionService {
         message: 'لم يقم الطفل بأي تمرين بعد',
 
         stats: {
-          reading: {
-            percentage: 0,
-            status: 'لا توجد بيانات',
-          },
-          writing: {
-            percentage: 0,
-            status: 'لا توجد بيانات',
-          },
-          performance: {
-            percentage: 0,
-            status: 'لا توجد بيانات',
-          },
+          reading: { percentage: 0, status: 'لا توجد بيانات' },
+          writing: { percentage: 0, status: 'لا توجد بيانات' },
+          performance: { percentage: 0, status: 'لا توجد بيانات' },
         },
 
         chartData: [],
@@ -176,16 +167,20 @@ export class SubmissionService {
     });
 
     // -----------------------------------------------------------------
-    // 🌟 الجزء المطور: تجميع الأخطاء وربطها برقم الليفل للتشخيص الدقيق
+    // 🌟 الجزء المطور: تجميع الأخطاء وتأمينها كحروف صافية (تم تعديله)
     // -----------------------------------------------------------------
     const detailedMistakes: { letter: string; level: string }[] = [];
 
     for (const s of submissions) {
       if (s.mistakes && s.mistakes.length > 0) {
         for (const letter of s.mistakes) {
+          const cleanLetter = letter.trim();
+          // تأمين: لو الكلمة متخزنة كاملة في السجلات القديمة، قصها فوراً لضمان نظافة التقرير
+          const finalLetter = cleanLetter.length > 1 ? cleanLetter.charAt(0) : cleanLetter;
+
           detailedMistakes.push({
-            letter,
-            level: s.level, // هيقرأ 'level1' أو '1' على حسب تخزينك
+            letter: finalLetter,
+            level: s.level,
           });
         }
       }
@@ -214,7 +209,7 @@ export class SubmissionService {
     const alerts: any[] = [];
     let alertId = 1;
 
-    // reading
+    // reading alert
     if (stats.reading.percentage < 40) {
       alerts.push({
         id: alertId++,
@@ -223,7 +218,7 @@ export class SubmissionService {
       });
     }
 
-    // writing
+    // writing alert
     if (stats.writing.percentage < 30) {
       alerts.push({
         id: alertId++,
@@ -238,12 +233,12 @@ export class SubmissionService {
       });
     }
 
-    // listening
+    // performance alert
     if (stats.performance.percentage < 40) {
       alerts.push({
         id: alertId++,
         type: 'warning',
-        text: 'مستوى الأداء يحتاج إلى تطوير',
+        text: 'مستوى الأداء والتركيز يحتاج إلى تطوير',
       });
     }
 
@@ -264,7 +259,7 @@ export class SubmissionService {
     const activities: any[] = [];
     let id = 1;
 
-    // reading general
+    // reading general activity
     if (stats.reading.percentage < 50) {
       activities.push({
         id: id++,
@@ -273,7 +268,7 @@ export class SubmissionService {
       });
     }
 
-    // writing general
+    // writing general activity
     if (stats.writing.percentage < 50) {
       activities.push({
         id: id++,
@@ -282,13 +277,12 @@ export class SubmissionService {
       });
     }
 
-    // listening general
-    // performance alert
-    if (stats.performance.percentage < 40) {
-      alerts.push({
-        id: alertId++,
-        type: 'warning',
-        text: 'مهارات التركيز والأداء تحتاج إلى تطوير',
+    // 🌟 تصحيح التكرار: هنا قمنا بوضع الـ activity الخاص بالـ performance بشكل صحيح بدل الـ alert المكرر
+    if (stats.performance.percentage < 50) {
+      activities.push({
+        id: id++,
+        type: 'performance',
+        text: 'تمارين وألعاب تفاعلية لزيادة التركيز وسرعة الاستجابة',
       });
     }
 
@@ -307,7 +301,7 @@ export class SubmissionService {
       }
     };
 
-    // 🌟 تحويل توب الأخطاء المكتشفة إلى أنشطة تشخيصية موجهة للحرف والليفل بالظبط
+    // تحويل توب الأخطاء المكتشفة إلى أنشطة تشخيصية موجهة للحرف والليفل بالظبط
     if (sortedMistakes.length > 0) {
       sortedMistakes.forEach((item) => {
         const displayLevel = item.level.replace('level', '').trim();
@@ -345,7 +339,6 @@ export class SubmissionService {
       alerts,
       activities,
       readingImprovement: this.calculateImprovement(submissions, 'reading'),
-
       writingImprovement: this.calculateImprovement(submissions, 'writing'),
     };
   }
