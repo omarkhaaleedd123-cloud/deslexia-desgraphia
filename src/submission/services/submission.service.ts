@@ -7,6 +7,7 @@ import { SubmissionProvider } from '../providers/submission.provider';
 import { CreateSubmissionDto } from '../dto/create-submission.dto';
 import { InjectModel } from '@nestjs/sequelize';
 import { Child } from '../../child/entities/child.entity';
+import { Exercise } from 'src/exercises/entities/exercises.entity';
 
 @Injectable()
 export class SubmissionService {
@@ -15,10 +16,12 @@ export class SubmissionService {
 
     @InjectModel(Child)
     private readonly childModel: typeof Child,
-  ) {}
+
+    @InjectModel(Exercise)
+    private readonly exerciseModel: typeof Exercise
+  ) { }
 
   // CREATE
-
   async create(dto: CreateSubmissionDto, parentId: number) {
     const child = await this.childModel.findByPk(dto.childId);
 
@@ -30,9 +33,38 @@ export class SubmissionService {
       throw new ForbiddenException('You cannot add data to this child');
     }
 
+    // 🌟 المنطق الجديد: طالما فيه أخطاء مبعوتة، صلحها واستنتج الحرف فوراً بغض النظر عن الـ status
+    if (dto.mistakes && dto.mistakes.length > 0) {
+      // الذهاب لجدول الـ exercises لمعرفة تفاصيل التمرين بناءً على الـ id
+      const exercise = await this.exerciseModel.findByPk(dto.exerciseId);
+
+      if (exercise) {
+        let targetLetter = '';
+        const cleanContent = exercise.content.trim();
+
+        // لو التمرين في ليفل الكلمات (طوله أكبر من حرف واحد)، خدي أول حرف منه
+        if (cleanContent.length > 1) {
+          targetLetter = cleanContent.charAt(0); // "سمكة" أو "ثعلب" تتحول لـ الحرف الأول
+        } else {
+          targetLetter = cleanContent; // لو حرف جاهز أصلاً سيبه كقيمة صافية
+        }
+
+        // أرشفة الكلمة الأصلية اللي جاية من الموبايل جوه الميتاداتا
+        dto.metadata = dto.metadata || {};
+        dto.metadata.originalWordMistakes = [...dto.mistakes];
+        dto.metadata.exerciseOriginalContent = cleanContent;
+
+        // تحديث الـ mistakes بالحرف الصافي المستنتج من الداتابيز
+        dto.mistakes = [targetLetter];
+      }
+    } else {
+      // لو الـ App مش باعت أي mistakes اصلاً، نضمن إنها مصفوفة فاضية
+      dto.mistakes = [];
+    }
+
+    // حفظ الـ dto في قاعدة البيانات
     return this.submissionProvider.create(dto);
   }
-
   // GET BY CHILD
   async findByChild(childId: number, parentId: number) {
     const submissions =
@@ -88,6 +120,7 @@ export class SubmissionService {
         console.error('TRACE: Age calculation crashed:', e);
       }
     }
+
     // stats
     const stats = {
       reading: this.calculateType(submissions, 'reading'),
@@ -114,26 +147,43 @@ export class SubmissionService {
       };
     });
 
-    // letters
-    const mistakes = submissions.flatMap((s) => s.mistakes || []);
+    // -----------------------------------------------------------------
+    // 🌟 الجزء المطور: تجميع الأخطاء وربطها برقم الليفل للتشخيص الدقيق
+    // -----------------------------------------------------------------
+    const detailedMistakes: { letter: string; level: string }[] = [];
 
-    // count كل حرف
-    const frequencyMap: Record<string, number> = {};
-
-    for (const letter of mistakes) {
-      frequencyMap[letter] = (frequencyMap[letter] || 0) + 1;
+    for (const s of submissions) {
+      if (s.mistakes && s.mistakes.length > 0) {
+        for (const letter of s.mistakes) {
+          detailedMistakes.push({
+            letter,
+            level: s.level, // هيقرأ 'level1' أو '1' على حسب تخزينك
+          });
+        }
+      }
     }
 
-    // ترتيب حسب التكرار
-    const sortedLetters = Object.entries(frequencyMap)
-      .sort((a, b) => b[1] - a[1])
-      .map(([letter]) => letter);
+    // خريطة تكرار ذكية تجمع (الحرف + الليفل) كمفتاح فريد
+    const frequencyMap: Record<string, { count: number; letter: string; level: string }> = {};
 
-    // خد أهم 5
-    const lettersToPractice = sortedLetters.slice(0, 5);
+    for (const item of detailedMistakes) {
+      const key = `${item.letter}_${item.level}`;
+      if (!frequencyMap[key]) {
+        frequencyMap[key] = { count: 0, letter: item.letter, level: item.level };
+      }
+      frequencyMap[key].count += 1;
+    }
+
+    // ترتيب التوب 5 مشاكل من الأكثر تكراراً للأقل
+    const sortedMistakes = Object.values(frequencyMap)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    // مصفوفة الحروف الضعيفة الصافية للـ UI التقليدي
+    const lettersToPractice = [...new Set(sortedMistakes.map((m) => m.letter))];
+
     // alerts
     const alerts: any[] = [];
-
     let alertId = 1;
 
     // reading
@@ -183,12 +233,10 @@ export class SubmissionService {
     }
 
     // activities
-
     const activities: any[] = [];
-
     let id = 1;
 
-    // reading
+    // reading general
     if (stats.reading.percentage < 50) {
       activities.push({
         id: id++,
@@ -197,7 +245,7 @@ export class SubmissionService {
       });
     }
 
-    // writing
+    // writing general
     if (stats.writing.percentage < 50) {
       activities.push({
         id: id++,
@@ -206,7 +254,7 @@ export class SubmissionService {
       });
     }
 
-    // listening
+    // listening general
     if (stats.listening.percentage < 50) {
       activities.push({
         id: id++,
@@ -215,12 +263,32 @@ export class SubmissionService {
       });
     }
 
-    // letters practice
-    if (lettersToPractice.length > 0) {
-      activities.push({
-        id: id++,
-        type: 'letters',
-        text: `مراجعة الحروف: ${lettersToPractice.join(' - ')}`,
+    // 🌟 دالة مساعدة لترجمة نوع الصعوبة بناءً على رقم الليفل
+    const getProblemDescription = (levelStr: string) => {
+      const lvl = levelStr.replace('level', '').trim();
+      switch (lvl) {
+        case '1': return 'صعوبة في نطق وسماع الحرف بالشكل الصحيح';
+        case '2': return 'صعوبة في تمييز ومد الحرف (حروف المد)';
+        case '3':
+        case '4': return 'صعوبة في قراءة وفك تشفير الكلمات التي تحتوي على الحرف';
+        case '5': return 'صعوبة في كتابة ورسم اتجاهات الحرف بالترتيب';
+        case '6': return 'صعوبة في نطق وسياق الجمل الطويلة للخطأ المشترك';
+        case '7': return 'صعوبة في كتابة وإملاء كلمات كاملة تبدأ بهذا الحرف';
+        default: return 'يحتاج إلى مراجعة وتدريب مكثف على هذا الحرف';
+      }
+    };
+
+    // 🌟 تحويل توب الأخطاء المكتشفة إلى أنشطة تشخيصية موجهة للحرف والليفل بالظبط
+    if (sortedMistakes.length > 0) {
+      sortedMistakes.forEach((item) => {
+        const displayLevel = item.level.replace('level', '').trim();
+        activities.push({
+          id: id++,
+          type: 'letters',
+          letter: item.letter,
+          level: item.level,
+          text: `مراجعة حرف (${item.letter}) في [المستوى ${displayLevel}]: ${getProblemDescription(item.level)}`,
+        });
       });
     }
 
