@@ -76,24 +76,4 @@ export class ChildrenController {
   delete(@CurrentUser() user: any, @Param('id', ParseIntPipe) id: number) {
     return this.service.delete(id, user.userId);
   }
-
-  // إندبوينت الـ evaluate هتبقى مفتوحة ومريحة في تجارب الـ Audio من غير تعقيد التوكن حالياً
-  @Post('evaluate')
-  @UseInterceptors(FileInterceptor('audio', {
-    storage: diskStorage({
-      destination: './uploads',
-      filename: (req, file, cb) => {
-        const randomName = Array(32).fill(null).map(() => (Math.round(Math.random() * 16)).toString(16)).join('');
-        return cb(null, `${randomName}${extname(file.originalname)}`);
-      },
-    }),
-  }))
-  async evaluate(
-    @UploadedFile() file: Express.Multer.File,
-    @Body('expectedText') expectedText: string,
-  ) {
-    if (!file) throw new BadRequestException('File is missing');
-    console.log('Corrected File Path:', file.path);
-    return await this.service.evaluateSpeech(file.path, expectedText);
-  }
 }
