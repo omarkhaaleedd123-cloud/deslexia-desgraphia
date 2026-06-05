@@ -180,8 +180,12 @@ export class SubmissionService {
     const chartData = lastSubmissions.map((s, index) => {
       const total = s.totalItems || 0;
       const mistakes = (s.mistakes || []).length;
+      const safeMistakes = Math.min(mistakes, total);
+
       const score =
-        total > 0 ? Math.round(((total - mistakes) / total) * 100) : 0;
+        total > 0
+          ? Math.max(0, Math.round(((total - safeMistakes) / total) * 100))
+          : 0;
 
       if (s.exerciseType === 'reading') lastReadingScore = score;
       if (s.exerciseType === 'writing') lastWritingScore = score;
@@ -401,13 +405,12 @@ export class SubmissionService {
 
     for (const s of weeklySubmissions) {
       const total = s.totalItems || 0;
-      const mistakesCount = (s.mistakes || []).length;
 
-      if (total > 0) {
-        const score = ((total - mistakesCount) / total) * 100;
-        totalScore += score;
-        count++;
-      }
+      const mistakesCount = Math.min((s.mistakes || []).length, total);
+
+      const score = Math.max(0, ((total - mistakesCount) / total) * 100);
+      totalScore += score;
+      count++;
     }
 
     const percentage = count ? Math.round(totalScore / count) : 0;
@@ -432,14 +435,18 @@ export class SubmissionService {
 
     for (const s of weeklySubmissions) {
       const totalItems = s.totalItems || 0;
-      const mistakesCount = (s.mistakes || []).length;
+      const mistakesCount = Math.min((s.mistakes || []).length, totalItems);
+
       const duration = s.duration || 0;
       const attemptsCount = s.attemptsCount || 1;
 
       if (totalItems <= 0) continue;
 
       // الدقة
-      const accuracy = ((totalItems - mistakesCount) / totalItems) * 100;
+      const accuracy = Math.max(
+        0,
+        ((totalItems - mistakesCount) / totalItems) * 100,
+      );
 
       // الوقت المتوقع
       const expectedTime = totalItems * 10;
@@ -470,15 +477,18 @@ export class SubmissionService {
   }
   private calculateSingleFocus(s: any) {
     const totalItems = s.totalItems || 0;
-    const mistakesCount = (s.mistakes || []).length;
+    const mistakesCount = Math.min((s.mistakes || []).length, totalItems);
+
     const duration = s.duration || 0;
     const attemptsCount = s.attemptsCount || 1;
 
-    if (totalItems <= 0) {
-      return 0;
-    }
+    if (totalItems <= 0) return 0;
 
-    const accuracy = ((totalItems - mistakesCount) / totalItems) * 100;
+    // الدقة
+    const accuracy = Math.max(
+      0,
+      ((totalItems - mistakesCount) / totalItems) * 100,
+    );
 
     const expectedTime = totalItems * 10;
 
@@ -515,7 +525,7 @@ export class SubmissionService {
       weeklySubmissions[weeklySubmissions.length - 1],
     );
 
-    const difference = Math.round(last - first);
+    const difference = Math.max(-30, Math.min(30, Math.round(last - first)));
 
     return {
       difference,
@@ -548,16 +558,29 @@ export class SubmissionService {
     const first = weeklySubmissions[0];
     const last = weeklySubmissions[weeklySubmissions.length - 1];
 
-    const firstScore =
-      ((first.totalItems - (first.mistakes?.length || 0)) / first.totalItems) *
-      100;
+    const firstMistakes = Math.min(
+      first.mistakes?.length || 0,
+      first.totalItems || 0,
+    );
 
-    const lastScore =
-      ((last.totalItems - (last.mistakes?.length || 0)) / last.totalItems) *
-      100;
+    const lastMistakes = Math.min(
+      last.mistakes?.length || 0,
+      last.totalItems || 0,
+    );
 
-    const difference = Math.round(lastScore - firstScore);
+    const firstScore = Math.max(
+      0,
+      ((first.totalItems - firstMistakes) / first.totalItems) * 100,
+    );
 
+    const lastScore = Math.max(
+      0,
+      ((last.totalItems - lastMistakes) / last.totalItems) * 100,
+    );
+    const difference = Math.max(
+      -30,
+      Math.min(30, Math.round(lastScore - firstScore)),
+    );
     return {
       difference,
       trend:
